@@ -441,6 +441,21 @@ var _ = Describe("SpiderCoordinator", Label("spidercoordinator", "overlay"), Ser
 							GinkgoWriter.Printf("ipv6 podCIDR is as expected, value %v=%v \n", cidr, v6PodCIDRString)
 						}
 					}
+
+					return true
+				}, common.ExecCommandTimeout, common.ForcedWaitingTime).Should(BeTrue())
+
+				Eventually(func() bool {
+					pod, err := frame.GetPod("kube-controller-manager", "kube-system")
+					Expect(err).NotTo(HaveOccurred())
+					Expect(pod).NotTo(BeNil())
+
+					GinkgoWriter.Print("got kube-controller-manage pod's labels: ", pod.Labels)
+					value, ok := pod.Labels["component"]
+					if !ok || value != "kube-controller-manager" {
+						return false
+					}
+
 					return true
 				}, common.ExecCommandTimeout, common.ForcedWaitingTime).Should(BeTrue())
 			})
@@ -500,6 +515,63 @@ var _ = Describe("SpiderCoordinator", Label("spidercoordinator", "overlay"), Ser
 				}
 
 				return false
+			}, common.ExecCommandTimeout, common.ForcedWaitingTime).Should(BeTrue())
+		})
+
+		It("status should be NotReady if neither kubeadm-config configMap nor kube-controller-manager pod can be found", func() {
+			// delete the kubeadm-config configMap
+			GinkgoWriter.Print("deleting kubeadm-config\n")
+			err = frame.DeleteConfigmap("kubeadm-config", "kube-system")
+			Expect(err).NotTo(HaveOccurred())
+
+			defer func() {
+				cm.ResourceVersion = ""
+				cm.Generation = 0
+				err = frame.CreateConfigmap(cm)
+				Expect(err).NotTo(HaveOccurred())
+			}()
+
+			masterNode := fmt.Sprintf("%s-control-plane", frame.Info.ClusterName)
+			By("update kube-controller-manager labels")
+			command := "sed -i 's?component: kube-controller-manager?component: kube-controller-manager1?' /etc/kubernetes/manifests/kube-controller-manager.yaml"
+			err = common.ExecCommandOnKindNode(context.TODO(), []string{masterNode}, command)
+			Expect(err).NotTo(HaveOccurred())
+
+			defer func() {
+				command = "sed -i 's?component: kube-controller-manager1?component: kube-controller-manager?' /etc/kubernetes/manifests/kube-controller-manager.yaml"
+				err = common.ExecCommandOnKindNode(context.TODO(), []string{masterNode}, command)
+				Expect(err).NotTo(HaveOccurred())
+			}()
+
+			Eventually(func() bool {
+				pod, err := frame.GetPod("kube-controller-manager", "kube-system")
+				Expect(err).NotTo(HaveOccurred())
+				Expect(pod).NotTo(BeNil())
+
+				GinkgoWriter.Print("got kube-controller-manage pod's labels: ", pod.Labels)
+				value, ok := pod.Labels["component"]
+				if !ok || value != "kube-controller-manager1" {
+					return false
+				}
+
+				return true
+			}, common.ExecCommandTimeout, common.ForcedWaitingTime).Should(BeTrue())
+
+			Eventually(func() bool {
+				sp, err := GetSpiderCoordinator(common.SpidercoodinatorDefaultName)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(sp).NotTo(BeNil())
+
+				GinkgoWriter.Print("got spidercoordinator's status: ", sp.Status)
+				if sp.Status.Phase != coordinatormanager.NotReady {
+					return false
+				}
+
+				if sp.Status.Reason != "No kube-controller-manager pod found, unable to get clusterCIDR" {
+					return false
+				}
+
+				return true
 			}, common.ExecCommandTimeout, common.ForcedWaitingTime).Should(BeTrue())
 		})
 	})

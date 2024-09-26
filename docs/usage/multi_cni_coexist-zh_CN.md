@@ -1,10 +1,10 @@
-# 多 CNI 共存于一个集群
+# Spiderpool 网络转发原理
 
 **简体中文** | [**English**](./multi_cni_coexist.md)
 
 ## 背景
 
-CNI 作为 Kubernetes 的集群中重要的组件。一般情况下，都会部署一个 CNI(比如 Calico)，由它负责集群网络的连通性。有些时候一些终端用户基于性能、安全等的考虑，会在集群中使用多种类型的 CNI，比如 Underlay 类型的 Macvlan CNI。此时一个集群就可能存在多种 CNI 类型的 Pod，不同类型的 Pod 分别适用于不同的场景：
+CNI 作为 Kubernetes 的集群中重要的组件。一般情况下，都会部署一个 CNI(比如 Calico)，由它负责集群网络的连通性。有些时候一些终端用户基于性能、安全等的考虑，会在集群中使用多种类型的 CNI，比如 Underlay 类型的 Macvlan CNI。此时一个集群就可能存在多种 CNI 类型的 Pod，不同类型的 Pod 分别适用于不同的场景，Spiderpool 支持多 CNI 类型的 Pod 的互联互通，主要支持以下访问场景：
 
 * 单 Calico 网卡的 Pod: 如 CoreDNS 等系统组件，没有固定 IP 的需求，也不需要南北向流量通信，只存在集群东西向流量通信的需求。
 * 单 Macvlan 网卡的 Pod: 适用于对性能，安全有特殊要求的应用，或需要以 Pod IP 直接南北向流量通信的传统上云应用。
@@ -101,6 +101,20 @@ Spiderpool 这一套完整的 Underlay 网络解决方案可以解决当集群�
 
 3. Pod1(单 calico 网卡 pod) 按照线路 `4` 通过 calixxx 虚拟网卡将回复报文转发到节点 node1。此时回复数据包的目标地址为节点 node3 的 IP，所以通过节点路由转发到 node3。随后通过 Kube-proxy 将源地址改回为 Pod3 (单 macvlan 网卡 pod) 的 IP，随后匹配 spiderpool 在主机上设置的 macvlan pod 直连路由，按照线路 `5` 通过 vethxxx 设备转发到目标 Pod3，整个访问完成。
     
+## 访问 Macvlan Pod 的 Service
+
+![](../images/macvlan-service.png)
+
+如上图：
+
+* 节点 Node1 和 Node2 分别部署了一个 Macvlan Pod。它们的 IP 地址分别是：172.17.1.100 和 172.17.1.200
+* 10.233.0.100 是 Node2 节点 Macvlan Pod 的 Service 的 ClusterIP
+* 
+
+
+
+
+
 ## 结论
 
 我们总结了这三种类型的 Pod 存在于一个集群时的一些通信场景，如下:

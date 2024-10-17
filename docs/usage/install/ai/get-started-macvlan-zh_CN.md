@@ -214,7 +214,9 @@
 
 3. 创建 CNI 配置和对应的 ippool 资源
 
-    对于 Ethernet 网络，请为所有的 GPU 亲和的 macvlan 网卡配置，并创建对应的 IP 地址池。如下例子，配置了 GPU1 亲和的网卡和 IP 地址池。
+    对于 Ethernet 网络，请为所有的 GPU 亲和的 macvlan 网卡配置，并创建对应的 IP 地址池。Spiderpool 为了简化 AI 应用配置多网卡的复杂度，支持通过 labels 对一组网卡配置分类，用户只需要为 Pod 添加注解: `netresources.spidernet.io/multus-config-label: shared-rdma-gpu`，这样 Spiderpool 会通过 webhook 自动为 Pod 注入对应的网卡和网络资源。
+
+    如下例子，配置了 GPU1 亲和的网卡和 IP 地址池:
 
     ```shell
     $ cat <<EOF | kubectl apply -f -
@@ -223,29 +225,35 @@
     metadata:
       name: gpu1-net11
     spec:
-          gateway: 172.16.11.254
-          subnet: 172.16.11.0/16
-          ips:
-            - 172.16.11.1-172.16.11.200
+      gateway: 172.16.11.254
+      subnet: 172.16.11.0/16
+      ips:
+        - 172.16.11.1-172.16.11.200
     ---
     apiVersion: spiderpool.spidernet.io/v2beta1
     kind: SpiderMultusConfig
     metadata:
       name: gpu1-macvlan
       namespace: spiderpool
+      labels:
+        shared-rdma-gpu: ""
     spec:
-          cniType: macvlan
-          macvlan:
-            master: ["enp11s0f0np0"]
-            ippools:
-              ipv4: ["gpu1-net11"]
+      cniType: macvlan
+      macvlan:
+        master: ["enp11s0f0np0"]
+        enableRdma: true
+        rdmaResourceName: "spidernet.io/shared_cx5_gpu1"
+        ippools:
+          ipv4: ["gpu1-net11"]
     EOF
     ```
+
+    如上配置，为 8 张网卡对应的 SpiderMultusConfig 资源，添加了 `shared-rdma-gpu` 标签。 LabelKey 为用户自定义的值，该值只需要与 Pod 的注解: `netresources.spidernet.io/multus-config-label` 的 value 保持一致。
 
 ## 创建测试应用
 
 1. 在指定节点上创建一组 DaemonSet 应用
-   如下例子，通过 annotations `v1.multus-cni.io/default-network` 指定使用 calico 的缺省网卡，用于进行控制面通信，annotations `k8s.v1.cni.cncf.io/networks` 接入 8 个 GPU 亲和网卡的网卡，用于 RDMA 通信，并配置 8 种 RDMA resources 资源
+   如下例子，通过 annotations `v1.multus-cni.io/default-network` 指定使用 calico 的缺省网卡，用于进行控制面通信。annotations `netresources.spidernet.io/multus-config-label: shared-rdma-gpu`，Spiderpool 将会自动向 Pod 注入 8 个 GPU 亲和网卡的网卡，用于 RDMA 通信，并配置 8 种 RDMA resources 资源。
 
     ```shell
     $ helm repo add spiderchart https://spidernet-io.github.io/charts
@@ -272,34 +280,40 @@
 
     # macvlan interfaces
     extraAnnotations:
-      k8s.v1.cni.cncf.io/networks: |-
-                       [{"name":"gpu1-macvlan","namespace":"spiderpool"},
-                        {"name":"gpu2-macvlan","namespace":"spiderpool"},
-                        {"name":"gpu3-macvlan","namespace":"spiderpool"},
-                        {"name":"gpu4-macvlan","namespace":"spiderpool"},
-                        {"name":"gpu5-macvlan","namespace":"spiderpool"},
-                        {"name":"gpu6-macvlan","namespace":"spiderpool"},
-                        {"name":"gpu7-macvlan","namespace":"spiderpool"},
-                        {"name":"gpu8-macvlan","namespace":"spiderpool"}]
-
-    # macvlan resource
-    resources:
-      limits:
-            spidernet.io/shared_cx5_gpu1: 1
-            spidernet.io/shared_cx5_gpu2: 1
-            spidernet.io/shared_cx5_gpu3: 1
-            spidernet.io/shared_cx5_gpu4: 1
-            spidernet.io/shared_cx5_gpu5: 1
-            spidernet.io/shared_cx5_gpu6: 1
-            spidernet.io/shared_cx5_gpu7: 1
-            spidernet.io/shared_cx5_gpu8: 1
-            #nvidia.com/gpu: 1
+      netresources.spidernet.io/multus-config-label: shared-rdma-gpu
     EOF
 
     $ helm install rdma-tools spiderchart/rdma-tools -f ./values.yaml
     ```
 
     在容器的网络命名空间创建过程中，Spiderpool 会对 macvlan 接口上的网关进行连通性测试，如果如上应用的所有 POD 都启动成功，说明了每个节点上的 VF 设备的连通性成功，可进行正常的 RDMA 通信。
+
+    当 Pod 成功 Running， 可检查 Pod 的 Annotations 和 RDMA Resources 是否成功注入:
+
+    ```shell
+    # Pod multus annotations
+    k8s.v1.cni.cncf.io/networks: |-
+      [{"name":"gpu1-macvlan","namespace":"spiderpool"},
+      {"name":"gpu2-macvlan","namespace":"spiderpool"},
+      {"name":"gpu3-macvlan","namespace":"spiderpool"},
+      {"name":"gpu4-macvlan","namespace":"spiderpool"},
+      {"name":"gpu5-macvlan","namespace":"spiderpool"},
+      {"name":"gpu6-macvlan","namespace":"spiderpool"},
+      {"name":"gpu7-macvlan","namespace":"spiderpool"},
+      {"name":"gpu8-macvlan","namespace":"spiderpool"}]
+    # macvlan resource
+    resources:
+      requests:
+        spidernet.io/shared_cx5_gpu1: 1
+        spidernet.io/shared_cx5_gpu2: 1
+        spidernet.io/shared_cx5_gpu3: 1
+        spidernet.io/shared_cx5_gpu4: 1
+        spidernet.io/shared_cx5_gpu5: 1
+        spidernet.io/shared_cx5_gpu6: 1
+        spidernet.io/shared_cx5_gpu7: 1
+        spidernet.io/shared_cx5_gpu8: 1
+        #nvidia.com/gpu: 1
+    ```
 
 2. 查看容器的网络命名空间状态
 

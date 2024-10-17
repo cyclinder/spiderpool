@@ -51,7 +51,8 @@ const (
 )
 
 const (
-	AnnotationPre = "ipam.spidernet.io"
+	AnnotationPre        = "ipam.spidernet.io"
+	AnnotationSpinderPre = "netresources.spidernet.io"
 
 	AnnoPodIPPool       = AnnotationPre + "/ippool"
 	AnnoPodIPPools      = AnnotationPre + "/ippools"
@@ -100,6 +101,10 @@ const (
 	//dra
 	DraAnnotationPre  = "dra.spidernet.io"
 	AnnoDraCdiVersion = AnnotationPre + "/cdi-version"
+
+	// webhook
+	PodMutatingWebhookName = "pods.spiderpool.spidernet.io"
+	AnnoMutatingPodWebhook = AnnotationSpinderPre + "/multus-config-label"
 )
 
 const (

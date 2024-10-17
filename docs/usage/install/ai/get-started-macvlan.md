@@ -215,7 +215,9 @@ The network planning for the cluster is as follows:
 
 3. Create CNI configuration and proper IP pool resources
 
-    For Ethernet networks, please configure the Macvlan network interfaces associated with all GPUs and create corresponding IP address pools. The example below shows the configuration for the network interface and IP address pool associated with GPU1.
+    For Ethernet networks, please configure macvlan interfaces for all GPU-affined network cards and create corresponding IP address pools. For Ethernet networks, please configure macvlan interfaces for all GPU-affinity network cards and create corresponding IP address pools. To simplify the complexity of configuring multiple network cards for AI applications, Spiderpool supports categorizing a group of network card configurations through labels. Users only need to add the annotation `netresources.spidernet.io/multus-config-label: shared-rdma-gpu` to the Pod, and Spiderpool will automatically inject the corresponding network cards and network resources into the Pod through a webhook.
+    
+    The example below shows the configuration for the network interface and IP address pool associated with GPU1.
 
     ```shell
     $ cat <<EOF | kubectl apply -f -
@@ -224,29 +226,33 @@ The network planning for the cluster is as follows:
     metadata:
       name: gpu1-net11
     spec:
-          gateway: 172.16.11.254
-          subnet: 172.16.11.0/16
-          ips:
-            - 172.16.11.1-172.16.11.200
+      gateway: 172.16.11.254
+      subnet: 172.16.11.0/16
+      ips:
+        - 172.16.11.1-172.16.11.200
     ---
     apiVersion: spiderpool.spidernet.io/v2beta1
     kind: SpiderMultusConfig
     metadata:
       name: gpu1-macvlan
       namespace: spiderpool
+      labels:
+        shared-rdma-gpu: ""
     spec:
-          cniType: macvlan
-          macvlan:
-            master: ["enp11s0f0np0"]
-            ippools:
-              ipv4: ["gpu1-net11"]
+      cniType: macvlan
+      macvlan:
+        master: ["enp11s0f0np0"]
+        ippools:
+          ipv4: ["gpu1-net11"]
     EOF
     ```
+
+    The above configuration adds the `shared-rdma-gpu` label to the SpiderMultusConfig resources corresponding to the 8 network cards. The LabelKey is a user-defined value that needs to match the value of the `netresources.spidernet.io/multus-config-label` label added to the Pod.
 
 ## Create a Test Application
 
 1. Create a DaemonSet application on specified nodes.
-   In the following example, the annotation field `v1.multus-cni.io/default-network` specifies the use of the default Calico network card for control plane communication. The annotation field `k8s.v1.cni.cncf.io/networks` connects to the 8 network cards affinitized to the GPU for RDMA communication, and configures 8 types of RDMA resources.
+   In the following example, the annotation field `v1.multus-cni.io/default-network` specifies the use of the default Calico network card for control plane communication. and specifies the label `netresources.spidernet.io/multus-config-label: shared-rdma-gpu`. Spiderpool will automatically inject 8 GPU-affinity network interfaces into the Pod for RDMA communication, and configure 8 types of RDMA resources.
 
     ```shell
     $ helm repo add spiderchart https://spidernet-io.github.io/charts
@@ -271,30 +277,9 @@ The network planning for the cluster is as follows:
                   - worker1
                   - worker2
 
-    # interfaces
+    # macvlan interfaces
     extraAnnotations:
-      k8s.v1.cni.cncf.io/networks: |-
-                       [{"name":"gpu1-macvlan","namespace":"spiderpool"},
-                        {"name":"gpu2-macvlan","namespace":"spiderpool"},
-                        {"name":"gpu3-macvlan","namespace":"spiderpool"},
-                        {"name":"gpu4-macvlan","namespace":"spiderpool"},
-                        {"name":"gpu5-macvlan","namespace":"spiderpool"},
-                        {"name":"gpu6-macvlan","namespace":"spiderpool"},
-                        {"name":"gpu7-macvlan","namespace":"spiderpool"},
-                        {"name":"gpu8-macvlan","namespace":"spiderpool"}]
-
-    # resource
-    resources:
-      limits:
-            spidernet.io/shared_cx5_gpu1: 1
-            spidernet.io/shared_cx5_gpu2: 1
-            spidernet.io/shared_cx5_gpu3: 1
-            spidernet.io/shared_cx5_gpu4: 1
-            spidernet.io/shared_cx5_gpu5: 1
-            spidernet.io/shared_cx5_gpu6: 1
-            spidernet.io/shared_cx5_gpu7: 1
-            spidernet.io/shared_cx5_gpu8: 1
-            #nvidia.com/gpu: 1
+      netresources.spidernet.io/multus-config-label: shared-rdma-gpu
     EOF
 
     $ helm install rdma-tools spiderchart/rdma-tools -f ./values.yaml
@@ -302,6 +287,33 @@ The network planning for the cluster is as follows:
 
     During the creation of the network namespace for the container, Spiderpool will perform connectivity tests on the gateway of the macvlan interface.
     If all PODs of the above application start successfully, it indicates successful connectivity of the network cards on each node, allowing normal RDMA communication.
+
+    When the Pod is successfully Running, you can check if the Annotations and RDMA Resources have been successfully injected into the Pod:
+
+    ```shell
+    # Pod multus annotations
+    k8s.v1.cni.cncf.io/networks: |-
+      [{"name":"gpu1-macvlan","namespace":"spiderpool"},
+      {"name":"gpu2-macvlan","namespace":"spiderpool"},
+      {"name":"gpu3-macvlan","namespace":"spiderpool"},
+      {"name":"gpu4-macvlan","namespace":"spiderpool"},
+      {"name":"gpu5-macvlan","namespace":"spiderpool"},
+      {"name":"gpu6-macvlan","namespace":"spiderpool"},
+      {"name":"gpu7-macvlan","namespace":"spiderpool"},
+      {"name":"gpu8-macvlan","namespace":"spiderpool"}]
+    # macvlan resource
+    resources:
+      requests:
+        spidernet.io/shared_cx5_gpu1: 1
+        spidernet.io/shared_cx5_gpu2: 1
+        spidernet.io/shared_cx5_gpu3: 1
+        spidernet.io/shared_cx5_gpu4: 1
+        spidernet.io/shared_cx5_gpu5: 1
+        spidernet.io/shared_cx5_gpu6: 1
+        spidernet.io/shared_cx5_gpu7: 1
+        spidernet.io/shared_cx5_gpu8: 1
+        #nvidia.com/gpu: 1
+    ```
 
 2. Check the network namespace status of the container.
 

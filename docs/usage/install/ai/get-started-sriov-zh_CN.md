@@ -211,19 +211,19 @@ Spiderpool 使用了 [sriov-network-operator](https://github.com/k8snetworkplumb
       name: gpu1-nic-policy
       namespace: spiderpool
     spec:
-          nodeSelector:
-            kubernetes.io/os: "linux"
-          resourceName: gpu1sriov
-          priority: 99
-          numVfs: 12
-          nicSelector:
-              deviceID: "1017"
-              vendor: "15b3"
-              rootDevices:
-              - 0000:86:00.0
-          linkType: ${LINK_TYPE}
-          deviceType: netdevice
-          isRdma: true
+      nodeSelector:
+        kubernetes.io/os: "linux"
+      resourceName: gpu1sriov
+      priority: 99
+      numVfs: 12
+      nicSelector:
+          deviceID: "1017"
+          vendor: "15b3"
+          rootDevices:
+          - 0000:86:00.0
+      linkType: ${LINK_TYPE}
+      deviceType: netdevice
+      isRdma: true
     ---
     apiVersion: sriovnetwork.openshift.io/v1
     kind: SriovNetworkNodePolicy
@@ -231,19 +231,19 @@ Spiderpool 使用了 [sriov-network-operator](https://github.com/k8snetworkplumb
       name: gpu2-nic-policy
       namespace: spiderpool
     spec:
-          nodeSelector:
-            kubernetes.io/os: "linux"
-          resourceName: gpu2sriov
-          priority: 99
-          numVfs: 12
-          nicSelector:
-              deviceID: "1017"
-              vendor: "15b3"
-              rootDevices:
-              - 0000:86:00.0
-          linkType: ${LINK_TYPE}
-          deviceType: netdevice
-          isRdma: true
+      nodeSelector:
+        kubernetes.io/os: "linux"
+      resourceName: gpu2sriov
+      priority: 99
+      numVfs: 12
+      nicSelector:
+          deviceID: "1017"
+          vendor: "15b3"
+          rootDevices:
+          - 0000:86:00.0
+      linkType: ${LINK_TYPE}
+      deviceType: netdevice
+      isRdma: true
     EOF
     ```
    
@@ -305,7 +305,11 @@ Spiderpool 使用了 [sriov-network-operator](https://github.com/k8snetworkplumb
 
 3. 创建 CNI 配置和对应的 ippool 资源
 
-   (1) 对于 Infiniband 网络，请为所有的 GPU 亲和的 SR-IOV 网卡配置 [IB-SRIOV CNI](https://github.com/k8snetworkplumbingwg/ib-sriov-cni) 配置，并创建对应的 IP 地址池 。 如下例子，配置了 GPU1 亲和的网卡和 IP 地址池
+   (1) 对于 Infiniband 网络，请为所有的 GPU 亲和的 SR-IOV 网卡配置 [IB-SRIOV CNI](https://github.com/k8snetworkplumbingwg/ib-sriov-cni) 配置，并创建对应的 IP 地址池 。 
+
+   Spiderpool 为了简化 AI 应用配置多网卡的复杂度，支持通过 labels 对一组网卡配置分类，用户只需要为 Pod 添加注解: `netresources.spidernet.io/multus-config-label: ib-sriov-rdma-gpu`，这样 Spiderpool 会通过 webhook 自动为 Pod 注入对应的网卡和网络资源。
+
+   如下例子，配置了 GPU1 亲和的网卡和 IP 地址池
 
     ```
     $ cat <<EOF | kubectl apply -f -
@@ -314,27 +318,33 @@ Spiderpool 使用了 [sriov-network-operator](https://github.com/k8snetworkplumb
     metadata:
       name: gpu1-net11
     spec:
-          gateway: 172.16.11.254
-          subnet: 172.16.11.0/16
-          ips:
-            - 172.16.11.1-172.16.11.200
+      gateway: 172.16.11.254
+      subnet: 172.16.11.0/16
+      ips:
+        - 172.16.11.1-172.16.11.200
     ---
     apiVersion: spiderpool.spidernet.io/v2beta1
     kind: SpiderMultusConfig
     metadata:
       name: gpu1-sriov
       namespace: spiderpool
+      labels:
+        ib-sriov-rdma-gpu: ""
     spec:
-          cniType: ib-sriov
-          ibsriov:
-            resourceName: spidernet.io/gpu1sriov
-            rdmaIsolation: true
-            ippools:
-              ipv4: ["gpu1-net91"]
+      cniType: ib-sriov
+      ibsriov:
+        resourceName: spidernet.io/gpu1sriov
+        rdmaIsolation: true
+        ippools:
+          ipv4: ["gpu1-net91"]
     EOF
     ```
 
-   (2) 对于 Ethernet 网络，请为所有的 GPU 亲和的 SR-IOV 网卡配置 [SR-IOV CNI](https://github.com/k8snetworkplumbingwg/sriov-cni) 配置，并创建对应的 IP 地址池 。 如下例子，配置了 GPU1 亲和的网卡和 IP 地址池
+   (2) 对于 Ethernet 网络，请为所有的 GPU 亲和的 SR-IOV 网卡配置 [SR-IOV CNI](https://github.com/k8snetworkplumbingwg/sriov-cni) 配置，并创建对应的 IP 地址池 。 
+
+   Spiderpool 为了简化 AI 应用配置多网卡的复杂度，支持通过 labels 对一组网卡配置分类，用户只需要为 Pod 添加注解: `netresources.spidernet.io/multus-config-label: sriov-rdma-gpu`，这样 Spiderpool 会通过 webhook 自动为 Pod 注入对应的网卡和网络资源。
+   
+   如下例子，配置了 GPU1 亲和的网卡和 IP 地址池
 
     ```   
     $ cat <<EOF | kubectl apply -f -
@@ -343,30 +353,32 @@ Spiderpool 使用了 [sriov-network-operator](https://github.com/k8snetworkplumb
     metadata:
       name: gpu1-net11
     spec:
-          gateway: 172.16.11.254
-          subnet: 172.16.11.0/16
-          ips:
-            - 172.16.11.1-172.16.11.200
+      gateway: 172.16.11.254
+      subnet: 172.16.11.0/16
+      ips:
+        - 172.16.11.1-172.16.11.200
     ---
     apiVersion: spiderpool.spidernet.io/v2beta1
     kind: SpiderMultusConfig
     metadata:
       name: gpu1-sriov
       namespace: spiderpool
+      labels:
+        sriov-config-gpu: ""
     spec:
-          cniType: sriov
-          sriov:
-            resourceName: spidernet.io/gpu1sriov
-            enableRdma: true
-            ippools:
-              ipv4: ["gpu1-net11"]
+      cniType: sriov
+      sriov:
+        resourceName: spidernet.io/gpu1sriov
+        enableRdma: true
+        ippools:
+          ipv4: ["gpu1-net11"]
     EOF
     ```
 
 ## 创建测试应用
 
 1. 在指定节点上创建一组 DaemonSet 应用，测试指定节点上的 SR-IOV 设备的可用性
-    如下例子，通过 annotations `v1.multus-cni.io/default-network` 指定使用 calico 的缺省网卡，用于进行控制面通信，annotations `k8s.v1.cni.cncf.io/networks` 接入 8 个 GPU 亲和网卡的 VF 网卡，用于 RDMA 通信，并配置 8 种 RDMA resources 资源
+    如下例子，通过 annotations `v1.multus-cni.io/default-network` 指定使用 calico 的缺省网卡，用于进行控制面通信。annotations `netresources.spidernet.io/multus-config-label: sriov-rdma-gpu`，Spiderpool 将会自动向 Pod 注入 8 个 GPU 亲和网卡的网卡，用于 RDMA 通信，并配置 8 种 RDMA resources 资源。
 
     ```
     $ helm repo add spiderchart https://spidernet-io.github.io/charts
@@ -393,35 +405,40 @@ Spiderpool 使用了 [sriov-network-operator](https://github.com/k8snetworkplumb
 
     # sriov interfaces
     extraAnnotations:
-      k8s.v1.cni.cncf.io/networks: |-
-                       [{"name":"gpu1-sriov","namespace":"spiderpool"},
-                        {"name":"gpu2-sriov","namespace":"spiderpool"},
-                        {"name":"gpu3-sriov","namespace":"spiderpool"},
-                        {"name":"gpu4-sriov","namespace":"spiderpool"},
-                        {"name":"gpu5-sriov","namespace":"spiderpool"},
-                        {"name":"gpu6-sriov","namespace":"spiderpool"},
-                        {"name":"gpu7-sriov","namespace":"spiderpool"},
-                        {"name":"gpu8-sriov","namespace":"spiderpool"}]
-
-    # sriov resource
-    resources:
-      limits:
-            spidernet.io/gpu1sriov: 1
-            spidernet.io/gpu2sriov: 1
-            spidernet.io/gpu3sriov: 1
-            spidernet.io/gpu4sriov: 1
-            spidernet.io/gpu5sriov: 1
-            spidernet.io/gpu6sriov: 1
-            spidernet.io/gpu7sriov: 1
-            spidernet.io/gpu8sriov: 1
-            #nvidia.com/gpu: 1
+      netresources.spidernet.io/multus-config-label: shared-rdma-gpu
     EOF
 
     $ helm install rdma-tools spiderchart/rdma-tools -f ./values.yaml
-    
     ```
    
     在容器的网络命名空间创建过程中，Spiderpool 会对 sriov 接口上的网关进行连通性测试，如果如上应用的所有 POD 都启动成功，说明了每个节点上的 VF 设备的连通性成功，可进行正常的 RDMA 通信。
+    
+    当 Pod 成功 Running， 可检查 Pod 的 Annotations 和 RDMA Resources 是否成功注入:
+
+    ```shell
+    # Pod multus annotations
+    k8s.v1.cni.cncf.io/networks: |-
+      [{"name":"gpu1-sriov","namespace":"spiderpool"},
+      {"name":"gpu2-sriov","namespace":"spiderpool"},
+      {"name":"gpu3-sriov","namespace":"spiderpool"},
+      {"name":"gpu4-sriov","namespace":"spiderpool"},
+      {"name":"gpu5-sriov","namespace":"spiderpool"},
+      {"name":"gpu6-sriov","namespace":"spiderpool"},
+      {"name":"gpu7-sriov","namespace":"spiderpool"},
+      {"name":"gpu8-sriov","namespace":"spiderpool"}]
+    # sriov resource
+    resources:
+      requests:
+        spidernet.io/gpu1sriov: 1
+        spidernet.io/gpu2sriov: 1
+        spidernet.io/gpu3sriov: 1
+        spidernet.io/gpu4sriov: 1
+        spidernet.io/gpu5sriov: 1
+        spidernet.io/gpu6sriov: 1
+        spidernet.io/gpu7sriov: 1
+        spidernet.io/gpu8sriov: 1
+        #nvidia.com/gpu: 1
+    ```
 
 2. 查看容器的网络命名空间状态
 
@@ -591,10 +608,10 @@ Spiderpool 使用了 [sriov-network-operator](https://github.com/k8snetworkplumb
       name: ib-sriov
       namespace: spiderpool
     spec:
-          cniType: ib-sriov
-          ibsriov:
-            pkey: 1000
-            ...
+      cniType: ib-sriov
+      ibsriov:
+        pkey: 1000
+        ...
     EOF
     ```
 

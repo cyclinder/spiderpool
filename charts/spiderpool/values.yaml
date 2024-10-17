@@ -669,6 +669,9 @@ spiderpoolController:
   ## @param spiderpoolController.webhookPort the http port for spiderpoolController webhook
   webhookPort: 5722
 
+  ## @param spiderpoolController.enablePodNetworkResourceInject inject network resource to pod 
+  enablePodNetworkResourceInject: false
+
   prometheus:
     ## @param spiderpoolController.prometheus.enabled enable spiderpool Controller to collect metrics
     enabled: false

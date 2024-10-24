@@ -31,6 +31,7 @@ data:
       cdiRootPath: {{ .Values.dra.cdiRootPath }}
       hostDevicePath: {{ .Values.dra.hostDevicePath }}
     tuneSysctlConfig: {{ .Values.spiderpoolAgent.tuneSysctlConfig }}
+    podNetworkResourceInjectNamespacesExclude: {{ toJson .Values.spiderpoolController.podNetworkResourceInjectNamespacesExclude }}
 {{- if .Values.multus.multusCNI.install }}
 ---
 kind: ConfigMap

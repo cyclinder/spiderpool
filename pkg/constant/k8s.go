@@ -100,6 +100,10 @@ const (
 	//dra
 	DraAnnotationPre  = "dra.spidernet.io"
 	AnnoDraCdiVersion = AnnotationPre + "/cdi-version"
+
+	// webhook
+	PodMutatingWebhookName = "pods.spiderpool.spidernet.io"
+	AnnoPodResourceInject  = AnnotationPre + "/resource-inject-key"
 )
 
 const (

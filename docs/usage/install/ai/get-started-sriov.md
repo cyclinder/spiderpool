@@ -317,10 +317,10 @@ The network planning for the cluster is as follows:
     metadata:
       name: gpu1-net11
     spec:
-          gateway: 172.16.11.254
-          subnet: 172.16.11.0/16
-          ips:
-            - 172.16.11.1-172.16.11.200
+      gateway: 172.16.11.254
+      subnet: 172.16.11.0/16
+      ips:
+        - 172.16.11.1-172.16.11.200
     ---
     apiVersion: spiderpool.spidernet.io/v2beta1
     kind: SpiderMultusConfig
@@ -328,11 +328,11 @@ The network planning for the cluster is as follows:
       name: gpu1-sriov
       namespace: spiderpool
     spec:
-          cniType: ib-sriov
-          ibsriov:
-            resourceName: spidernet.io/gpu1sriov
-            ippools:
-              ipv4: ["gpu1-net91"]
+      cniType: ib-sriov
+      ibsriov:
+        resourceName: spidernet.io/gpu1sriov
+        ippools:
+          ipv4: ["gpu1-net91"]
     EOF
     ```
 
@@ -345,10 +345,10 @@ The network planning for the cluster is as follows:
     metadata:
       name: gpu1-net11
     spec:
-          gateway: 172.16.11.254
-          subnet: 172.16.11.0/16
-          ips:
-            - 172.16.11.1-172.16.11.200
+      gateway: 172.16.11.254
+      subnet: 172.16.11.0/16
+      ips:
+        - 172.16.11.1-172.16.11.200
     ---
     apiVersion: spiderpool.spidernet.io/v2beta1
     kind: SpiderMultusConfig
@@ -356,12 +356,75 @@ The network planning for the cluster is as follows:
       name: gpu1-sriov
       namespace: spiderpool
     spec:
-          cniType: sriov
-          sriov:
-            resourceName: spidernet.io/gpu1sriov
-            enableRdma: true
-            ippools:
-              ipv4: ["gpu1-net11"]
+      cniType: sriov
+      sriov:
+        resourceName: spidernet.io/gpu1sriov
+        enableRdma: true
+        ippools:
+          ipv4: ["gpu1-net11"]
+    EOF
+    ```
+
+4. (Optional) To simplify the complexity of configuring multiple network cards for AI applications, Spiderpool supports categorizing a group of network card configurations through labels (spidernet.io/resource-inject-key). Users only need to add the same annotation to the Pod. This way, Spiderpool will automatically inject all corresponding network cards and network resources with the same label into the Pod through a webhook. For example:
+
+    a. For Infiniband Networks, configure [the IB-SRIOV CNI](https://github.com/k8snetworkplumbingwg/ib-sriov-cni)  for all GPU-affinitized SR-IOV network cards and create the corresponding IP address pool. The following example configures the network card and IP address pool for GPU1
+
+    ```
+    $ cat <<EOF | kubectl apply -f -
+    apiVersion: spiderpool.spidernet.io/v2beta1
+    kind: SpiderIPPool
+    metadata:
+      name: gpu1-net11
+    spec:
+      gateway: 172.16.11.254
+      subnet: 172.16.11.0/16
+      ips:
+        - 172.16.11.1-172.16.11.200
+    ---
+    apiVersion: spiderpool.spidernet.io/v2beta1
+    kind: SpiderMultusConfig
+    metadata:
+      name: gpu1-sriov
+      namespace: spiderpool
+      labels:
+        spidernet.io/resource-inject-key: gpu-ibsriov
+    spec:
+      cniType: ib-sriov
+      ibsriov:
+        resourceName: spidernet.io/gpu1sriov
+        ippools:
+          ipv4: ["gpu1-net91"]
+    EOF
+    ```
+
+    b. For Ethernet Networks, configure [the SR-IOV CNI](https://github.com/k8snetworkplumbingwg/sriov-cni) for all GPU-affinitized SR-IOV network cards and create the corresponding IP address pool. The following example configures the network card and IP address pool for GPU1
+
+    ```   
+    $ cat <<EOF | kubectl apply -f -
+    apiVersion: spiderpool.spidernet.io/v2beta1
+    kind: SpiderIPPool
+    metadata:
+      name: gpu1-net11
+    spec:
+      gateway: 172.16.11.254
+      subnet: 172.16.11.0/16
+      ips:
+        - 172.16.11.1-172.16.11.200
+    ---
+    apiVersion: spiderpool.spidernet.io/v2beta1
+    kind: SpiderMultusConfig
+    metadata:
+      name: gpu1-sriov
+      namespace: spiderpool
+      labels:
+        spidernet.io/resource-inject-key: gpu-sriov
+    spec:
+      cniType: sriov
+      sriov:
+        resourceName: spidernet.io/gpu1sriov
+        enableRdma: true
+        ippools:
+          ipv4: ["gpu1-net11"]
     EOF
     ```
 
@@ -384,39 +447,39 @@ The network planning for the cluster is as follows:
     # just run daemonset in nodes 'worker1' and 'worker2'
     affinity:
       nodeAffinity:
-            requiredDuringSchedulingIgnoredDuringExecution:
-              nodeSelectorTerms:
-              - matchExpressions:
-                - key: kubernetes.io/hostname
-                  operator: In
-                  values:
-                  - worker1
-                  - worker2
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+          - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+              - worker1
+              - worker2
 
     # sriov interfaces
     extraAnnotations:
       k8s.v1.cni.cncf.io/networks: |-
-                       [{"name":"gpu1-sriov","namespace":"spiderpool"},
-                        {"name":"gpu2-sriov","namespace":"spiderpool"},
-                        {"name":"gpu3-sriov","namespace":"spiderpool"},
-                        {"name":"gpu4-sriov","namespace":"spiderpool"},
-                        {"name":"gpu5-sriov","namespace":"spiderpool"},
-                        {"name":"gpu6-sriov","namespace":"spiderpool"},
-                        {"name":"gpu7-sriov","namespace":"spiderpool"},
-                        {"name":"gpu8-sriov","namespace":"spiderpool"}]
+        [{"name":"gpu1-sriov","namespace":"spiderpool"},
+        {"name":"gpu2-sriov","namespace":"spiderpool"},
+        {"name":"gpu3-sriov","namespace":"spiderpool"},
+        {"name":"gpu4-sriov","namespace":"spiderpool"},
+        {"name":"gpu5-sriov","namespace":"spiderpool"},
+        {"name":"gpu6-sriov","namespace":"spiderpool"},
+        {"name":"gpu7-sriov","namespace":"spiderpool"},
+        {"name":"gpu8-sriov","namespace":"spiderpool"}]
 
     # sriov resource
     resources:
       limits:
-            spidernet.io/gpu1sriov: 1
-            spidernet.io/gpu2sriov: 1
-            spidernet.io/gpu3sriov: 1
-            spidernet.io/gpu4sriov: 1
-            spidernet.io/gpu5sriov: 1
-            spidernet.io/gpu6sriov: 1
-            spidernet.io/gpu7sriov: 1
-            spidernet.io/gpu8sriov: 1
-            #nvidia.com/gpu: 1
+        spidernet.io/gpu1sriov: 1
+        spidernet.io/gpu2sriov: 1
+        spidernet.io/gpu3sriov: 1
+        spidernet.io/gpu4sriov: 1
+        spidernet.io/gpu5sriov: 1
+        spidernet.io/gpu6sriov: 1
+        spidernet.io/gpu7sriov: 1
+        spidernet.io/gpu8sriov: 1
+        #nvidia.com/gpu: 1
     EOF
 
     $ helm install rdma-tools spiderchart/rdma-tools -f ./values.yaml
@@ -425,7 +488,66 @@ The network planning for the cluster is as follows:
     During the creation of the network namespace for the container, Spiderpool will perform connectivity tests on the gateway of the SR-IOV interface. 
     If all PODs of the above application start successfully, it indicates successful connectivity of the VF devices on each node, allowing normal RDMA communication.
 
-2. Check the network namespace status of the container.
+2. (Optional) You can add the annotation `spidernet.io/resource-inject-key: gpu-sriov` to the Pod, so that Spiderpool automatically adds 8 GPU-affinity network cards for RDMA communication and configures 8 types of RDMA resources:
+
+    ```shell
+    $ helm repo add spiderchart https://spidernet-io.github.io/charts
+    $ helm repo update
+    $ helm search repo rdma-tools
+   
+    # run daemonset on worker1 and worker2
+    $ cat <<EOF > values.yaml
+    # for china user , it could add these to use a domestic registry
+    #image:
+    #  registry: ghcr.m.daocloud.io
+
+    # just run daemonset in nodes 'worker1' and 'worker2'
+    affinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+          - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+              - worker1
+              - worker2
+    # sriov interfaces
+    extraAnnotations:
+      spidernet.io/resource-inject-key: gpu-sriov
+    EOF
+
+    $ helm install rdma-tools spiderchart/rdma-tools -f ./values.yaml
+    ```
+  
+    When the Pod is successfully Running, check if 8 RDMA network card annotations and 8 types of RDMA resources are successfully injected into the Pod.
+
+    ```shell
+    # Pod multus annotations
+    k8s.v1.cni.cncf.io/networks: |-
+      [{"name":"gpu1-sriov","namespace":"spiderpool"},
+      {"name":"gpu2-sriov","namespace":"spiderpool"},
+      {"name":"gpu3-sriov","namespace":"spiderpool"},
+      {"name":"gpu4-sriov","namespace":"spiderpool"},
+      {"name":"gpu5-sriov","namespace":"spiderpool"},
+      {"name":"gpu6-sriov","namespace":"spiderpool"},
+      {"name":"gpu7-sriov","namespace":"spiderpool"},
+      {"name":"gpu8-sriov","namespace":"spiderpool"}]
+    # sriov resource
+    resources:
+      requests:
+        spidernet.io/gpu1sriov: 1
+        spidernet.io/gpu2sriov: 1
+        spidernet.io/gpu3sriov: 1
+        spidernet.io/gpu4sriov: 1
+        spidernet.io/gpu5sriov: 1
+        spidernet.io/gpu6sriov: 1
+        spidernet.io/gpu7sriov: 1
+        spidernet.io/gpu8sriov: 1
+        #nvidia.com/gpu: 1
+    ```
+
+3. Check the network namespace status of the container.
 
     You can enter the network namespace of any POD to confirm that it has 9 network cards.
 

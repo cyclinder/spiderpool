@@ -6,7 +6,10 @@ package podmanager_test
 import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/spidernet-io/spiderpool/pkg/constant"
+	"github.com/spidernet-io/spiderpool/pkg/k8s/apis/spiderpool.spidernet.io/v2beta1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
@@ -73,6 +76,157 @@ var _ = Describe("PodManager utils", Label("pod_manager_utils_test"), func() {
 		It("checks running Pod", func() {
 			isAlive := podmanager.IsPodAlive(podT)
 			Expect(isAlive).To(BeTrue())
+		})
+	})
+
+	Describe("Test injectPodNetwork", Label("inject_pod_network_test"), func() {
+		var pod *corev1.Pod
+		var multusConfigs v2beta1.SpiderMultusConfigList
+
+		BeforeEach(func() {
+			pod = &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "test-pod",
+					Namespace:   "default",
+					Annotations: make(map[string]string),
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "test-container",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{},
+								Limits:   corev1.ResourceList{},
+							},
+						},
+					},
+				},
+			}
+		})
+
+		It("should successfully inject network configuration", func() {
+			multusConfigs = v2beta1.SpiderMultusConfigList{
+				Items: []v2beta1.SpiderMultusConfig{
+					{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "config1",
+							Namespace: "default",
+						},
+						Spec: v2beta1.MultusCNIConfigSpec{
+							CniType: ptr.To("macvlan"),
+							MacvlanConfig: &v2beta1.SpiderMacvlanCniConfig{
+								EnableRdma:       true,
+								RdmaResourceName: "spidernet.io/rdma-resource1",
+							},
+						},
+					},
+					{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "config2",
+							Namespace: "default",
+						},
+						Spec: v2beta1.MultusCNIConfigSpec{
+							CniType: ptr.To("macvlan"),
+							MacvlanConfig: &v2beta1.SpiderMacvlanCniConfig{
+								EnableRdma:       true,
+								RdmaResourceName: "spidernet.io/rdma-resource2",
+							},
+						},
+					},
+				},
+			}
+			err := podmanager.InjectPodNetwork(pod, multusConfigs)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(pod.Annotations[constant.MultusNetworkAttachmentAnnot]).To(Equal("default/config1,default/config2"))
+
+			Expect(pod.Spec.Containers[0].Resources.Limits).To(HaveKey(corev1.ResourceName("spidernet.io/rdma-resource1")))
+			Expect(pod.Spec.Containers[0].Resources.Limits).To(HaveKey(corev1.ResourceName("spidernet.io/rdma-resource2")))
+		})
+
+		It("should preserve existing resources in the Pod", func() {
+			// Set some pre-existing resources
+			pod.Spec.Containers[0].Resources.Limits = corev1.ResourceList{
+				corev1.ResourceName("spidernet.io/rdma-resource1"): resource.MustParse("1"),
+				corev1.ResourceName("existing-resource"):           resource.MustParse("10"),
+			}
+
+			multusConfigs = v2beta1.SpiderMultusConfigList{
+				Items: []v2beta1.SpiderMultusConfig{
+					{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "config1",
+							Namespace: "default",
+						},
+						Spec: v2beta1.MultusCNIConfigSpec{
+							CniType: ptr.To("macvlan"),
+							MacvlanConfig: &v2beta1.SpiderMacvlanCniConfig{
+								EnableRdma:       true,
+								RdmaResourceName: "spidernet.io/rdma-resource1",
+							},
+						},
+					},
+					{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "config2",
+							Namespace: "default",
+						},
+						Spec: v2beta1.MultusCNIConfigSpec{
+							CniType: ptr.To("macvlan"),
+							MacvlanConfig: &v2beta1.SpiderMacvlanCniConfig{
+								EnableRdma:       true,
+								RdmaResourceName: "spidernet.io/rdma-resource2",
+							},
+						},
+					},
+				},
+			}
+
+			err := podmanager.InjectPodNetwork(pod, multusConfigs)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(pod.Annotations[constant.MultusNetworkAttachmentAnnot]).To(Equal("default/config1,default/config2"))
+
+			// Verify that existing resources are preserved
+			Expect(pod.Spec.Containers[0].Resources.Limits).To(HaveKey(corev1.ResourceName("spidernet.io/rdma-resource1")))
+			Expect(pod.Spec.Containers[0].Resources.Limits).To(HaveKey(corev1.ResourceName("spidernet.io/rdma-resource2")))
+			Expect(pod.Spec.Containers[0].Resources.Limits).To(HaveKey(corev1.ResourceName("existing-resource")))
+			Expect(pod.Spec.Containers[0].Resources.Limits[corev1.ResourceName("existing-resource")]).To(Equal(resource.MustParse("10")))
+		})
+
+		It("should return an error when CNI types are inconsistent", func() {
+			multusConfigs = v2beta1.SpiderMultusConfigList{
+				Items: []v2beta1.SpiderMultusConfig{
+					{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "config1",
+							Namespace: "default",
+						},
+						Spec: v2beta1.MultusCNIConfigSpec{
+							CniType: ptr.To("macvlan"),
+							MacvlanConfig: &v2beta1.SpiderMacvlanCniConfig{
+								EnableRdma:       true,
+								RdmaResourceName: "spidernet.io/rdma-resource1",
+							},
+						},
+					},
+					{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "config2",
+							Namespace: "default",
+						},
+						Spec: v2beta1.MultusCNIConfigSpec{
+							CniType: ptr.To("ipvlan"),
+							IPVlanConfig: &v2beta1.SpiderIPvlanCniConfig{
+								EnableRdma:       true,
+								RdmaResourceName: "spidernet.io/rdma-resource2",
+							},
+						},
+					},
+				},
+			}
+
+			err := podmanager.InjectPodNetwork(pod, multusConfigs)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("cniType ipvlan is not consistent with macvlan"))
 		})
 	})
 })

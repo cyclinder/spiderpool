@@ -382,6 +382,93 @@ var _ = Describe("SpiderCoordinator", Label("spidercoordinator", "overlay"), Ser
 		})
 	})
 
+	Context("tesing the switch of cilium ipam mode: multi-pool to cluster-pool", func() {
+		var cm *corev1.ConfigMap
+		var err error
+		var clusterIPv4CIDR, clusterIPv6CIDR string
+		BeforeEach(func() {
+			if !common.CheckRunOverlayCNI() && !common.CheckCalicoFeatureOn() && !common.CheckCiliumFeatureOn() {
+				GinkgoWriter.Println("This environment is in underlay mode.")
+				Skip("This case don't need to run for underlay")
+			}
+
+			if common.CheckCalicoFeatureOn() && !common.CheckCiliumFeatureOn() {
+				GinkgoWriter.Println("The environment is calico mode.")
+				Skip("This case don't need to run for calico")
+			}
+
+			if common.CheckCiliumFeatureOn() && !common.CheckCalicoFeatureOn() {
+				GinkgoWriter.Println("The environment is cilium mode.")
+			}
+
+			cm, err = frame.GetConfigmap("cilium-config", "kube-system")
+			Expect(err).NotTo(HaveOccurred(), "error to get cilium configmap: %v\n", err)
+			cmCopy := cm.DeepCopy()
+
+			dataMap := cmCopy.Data
+			ipam := cm.Data["ipam"]
+			if ipam == "multi-pool" {
+				GinkgoWriter.Println("this case only don't running for cilium ipam multi-pool.")
+				Skip("")
+			}
+
+			// update cilim ipam mode to cluster-pool.
+			dataMap["ipam"] = "cluster-pool"
+			if frame.Info.IpV4Enabled {
+				clusterIPv4CIDR = "10.245.0.0/16"
+				dataMap["cluster-pool-ipv4-cidr"] = clusterIPv4CIDR
+			}
+
+			if frame.Info.IpV6Enabled {
+				clusterIPv6CIDR = "fd00:10:245::/112"
+				dataMap["cluster-pool-ipv6-cidr"] = clusterIPv6CIDR
+			}
+			cmCopy.Data = dataMap
+
+			// patch the configMap
+			Expect(
+				common.PatchConfigMap(frame, cm, cmCopy)).NotTo(
+				HaveOccurred(), "error to update configmap: %v\n", err)
+
+			DeferCleanup(func() {
+				// back ipam to multi-pool
+				cmCopy.Data["ipam"] = "multi-pool"
+				// patch the configMap
+				Expect(
+					common.PatchConfigMap(frame, cm, cmCopy)).NotTo(
+					HaveOccurred(), "error to update configmap: %v\n", err)
+			})
+		})
+
+		It("tesing the switch of cilium ipam mode: multi-pool to cluster-pool", Label("V00012"), func() {
+			Eventually(func() bool {
+				spc, err := GetSpiderCoordinator(common.SpidercoodinatorDefaultName)
+				Expect(err).NotTo(HaveOccurred(), "failed to get SpiderCoordinator, error is %v", err)
+				GinkgoWriter.Printf("Display the default spider coordinator information, podCIDRType: %v, status: %v \n", *spc.Spec.PodCIDRType, spc.Status)
+
+				if len(spc.Status.OverlayPodCIDR) == 0 || spc.Status.Phase != coordinatormanager.Synced {
+					GinkgoWriter.Printf("status.overlayPodCIDR status is still synchronizing, status %+v \n", spc.Status.OverlayPodCIDR)
+					return false
+				}
+
+				for _, cidr := range spc.Status.OverlayPodCIDR {
+					if ip.IsIPv4CIDR(cidr) {
+						if cidr != clusterIPv4CIDR {
+							return false
+						}
+						GinkgoWriter.Printf("ipv4 podCIDR is as expected, value %v=%v \n", cidr, v4PodCIDRString)
+					} else {
+						if cidr != clusterIPv6CIDR {
+							return false
+						}
+						GinkgoWriter.Printf("ipv6 podCIDR is as expected, value %v=%v \n", cidr, v6PodCIDRString)
+					}
+				}
+				return true
+			}, common.ExecCommandTimeout, common.EventOccurTimeout*2).Should(BeTrue())
+		})
+	})
+
 	Context("It can get the clusterCIDR from kubeadmConfig and kube-controller-manager pod", func() {
 
 		var spc *spiderpoolv2beta1.SpiderCoordinator

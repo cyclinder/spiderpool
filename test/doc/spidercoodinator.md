@@ -13,3 +13,4 @@
 | V00009  | it can get the clusterCIDR from kubeadmConfig or kube-controller-manager pod                              | p3       |       |  done  |       |
 | V00010  | It can get service cidr from k8s serviceCIDR resoures                                                     | p3       |       |  done  |       |
 | V00011 | status should be NotReady if neither kubeadm-config configMap nor kube-controller-manager pod can be found | p3       |       | done   |       |
+| V00012 | tesing the switch of cilium ipam mode: multi-pool to cluster-pool                                        | p3       |       | done   |       |

@@ -118,16 +118,17 @@ const (
 )
 
 const (
-	SpiderFinalizer          = SpiderpoolAPIGroup
-	SpiderpoolAPIGroup       = "spiderpool.spidernet.io"
-	SpiderpoolAPIVersion     = "v2beta1"
-	KindSpiderSubnet         = "SpiderSubnet"
-	KindSpiderIPPool         = "SpiderIPPool"
-	KindSpiderEndpoint       = "SpiderEndpoint"
-	KindSpiderReservedIP     = "SpiderReservedIP"
-	KindSpiderCoordinator    = "SpiderCoordinator"
-	KindSpiderMultusConfig   = "SpiderMultusConfig"
-	KindSpiderClaimParameter = "SpiderClaimParameter"
+	SpiderFinalizer             = SpiderpoolAPIGroup
+	SpiderpoolAPIGroup          = "spiderpool.spidernet.io"
+	SpiderpoolAPIVersion        = "v2beta1"
+	SpiderpoolAPIVersionV2beta2 = "v2beta2"
+	KindSpiderSubnet            = "SpiderSubnet"
+	KindSpiderIPPool            = "SpiderIPPool"
+	KindSpiderEndpoint          = "SpiderEndpoint"
+	KindSpiderReservedIP        = "SpiderReservedIP"
+	KindSpiderCoordinator       = "SpiderCoordinator"
+	KindSpiderMultusConfig      = "SpiderMultusConfig"
+	KindSpiderClaimParameter    = "SpiderClaimParameter"
 )
 
 const (

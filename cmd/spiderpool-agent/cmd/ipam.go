@@ -6,10 +6,14 @@ package cmd
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/go-openapi/runtime/middleware"
 	"github.com/go-openapi/strfmt"
 	"go.uber.org/zap"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	kubevirtv1 "kubevirt.io/api/core/v1"
 
 	"github.com/spidernet-io/spiderpool/api/v1/agent/models"
 	"github.com/spidernet-io/spiderpool/api/v1/agent/server/restapi/daemonset"
@@ -123,7 +127,7 @@ type _unixDeleteAgentIpamIps struct{}
 // Handle handles DELETE requests for /ipam/ips.
 func (g *_unixDeleteAgentIpamIps) Handle(params daemonset.DeleteIpamIpsParams) middleware.Responder {
 	err := params.IpamBatchDelArgs.Validate(strfmt.Default)
-	if nil != err {
+	if err != nil {
 		return daemonset.NewDeleteIpamIpsFailure().WithPayload(models.Error(err.Error()))
 	}
 
@@ -158,6 +162,65 @@ func (g *_unixDeleteAgentIpamIps) Handle(params daemonset.DeleteIpamIpsParams) m
 	}
 
 	return daemonset.NewDeleteIpamIpsOK()
+}
+
+type _unixGetIpamIPDetectionConfigs struct{}
+
+// Handle handles GET requests for /ipam/ip-detection-configs.
+func (g *_unixGetIpamIPDetectionConfigs) Handle(params daemonset.GetIpamIPDetectionConfigsParams) middleware.Responder {
+	err := params.GetIPDetectionConfig.Validate(strfmt.Default)
+	if err != nil {
+		return daemonset.NewGetCoordinatorConfigFailure().WithPayload(models.Error(err.Error()))
+	}
+
+	log := logutils.Logger.Named("IPAM").With(
+		zap.String("Operation", "Get IPGateway detection configs"),
+		zap.String("PodNamespace", *&params.GetIPDetectionConfig.PodNamespace),
+		zap.String("PodName", *&params.GetIPDetectionConfig.PodName),
+	)
+	ctx := logutils.IntoContext(params.HTTPRequest.Context(), log)
+
+	config := agentContext.IPAM.GetIPGatewayDetectionConfigs(ctx)
+
+	podClient := agentContext.PodManager
+	kubevirtMgr := agentContext.KubevirtManager
+	pod, err := podClient.GetPodByName(ctx, params.GetIPDetectionConfig.PodNamespace, params.GetIPDetectionConfig.PodName, constant.UseCache)
+	if err != nil {
+		return daemonset.NewGetCoordinatorConfigFailure().WithPayload(models.Error(fmt.Sprintf("failed to get pod %s/%s", params.GetIPDetectionConfig.PodNamespace, params.GetIPDetectionConfig.PodName)))
+	}
+
+	isVMPod := false
+	// kubevirt vm pod corresponding SpiderEndpoint uses kubevirt VM/VMI name
+	ownerReference := metav1.GetControllerOf(pod)
+	if ownerReference != nil && agentContext.Cfg.EnableKubevirtStaticIP && ownerReference.APIVersion == kubevirtv1.SchemeGroupVersion.String() && ownerReference.Kind == constant.KindKubevirtVMI {
+		isVMPod = true
+	}
+
+	// cancel IP conflict detection for the kubevirt vm live migration new pod
+	if config.EnableIPConflictDetection && isVMPod {
+		// the live migration new pod has the annotation "kubevirt.io/migrationJobName"
+		// we just only cancel IP conflict detection for the live migration new pod.
+		podAnnos := pod.GetAnnotations()
+		vmimName, ok := podAnnos[kubevirtv1.MigrationJobNameAnnotation]
+		if ok {
+			_, err := kubevirtMgr.GetVMIMByName(ctx, pod.Namespace, vmimName, false)
+			if nil != err {
+				if apierrors.IsNotFound(err) {
+					logger.Sugar().Warnf("no kubevirt vm pod '%s/%s' corresponding VirtualMachineInstanceMigration '%s/%s' found, still execute IP conflict detection",
+						pod.Namespace, pod.Name, pod.Namespace, vmimName)
+				} else {
+					return daemonset.NewGetCoordinatorConfigFailure().WithPayload(models.Error(fmt.Sprintf("failed to get kubevirt vm pod '%s/%s' corresponding VirtualMachineInstanceMigration '%s/%s', error: %v",
+						pod.Namespace, pod.Name, pod.Namespace, vmimName, err)))
+				}
+			} else {
+				// cancel IP conflict detection because there's a moment the old vm pod still running during the vm live migration phase
+				logger.Sugar().Infof("cancel IP conflict detection for live migration new pod '%s/%s'", pod.Namespace, pod.Name)
+				config.EnableIPConflictDetection = false
+			}
+		}
+	}
+
+	return daemonset.NewGetIpamIPDetectionConfigsOK().WithPayload(config)
 }
 
 func gatherIPAMAllocationErrMetric(ctx context.Context, err error) {

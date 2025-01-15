@@ -63,6 +63,11 @@ func configureAPI(api *restapi.SpiderpoolAgentAPIAPI) http.Handler {
 			return middleware.NotImplemented("operation connectivity.GetIpamHealthy has not yet been implemented")
 		})
 	}
+	if api.DaemonsetGetIpamIPDetectionConfigsHandler == nil {
+		api.DaemonsetGetIpamIPDetectionConfigsHandler = daemonset.GetIpamIPDetectionConfigsHandlerFunc(func(params daemonset.GetIpamIPDetectionConfigsParams) middleware.Responder {
+			return middleware.NotImplemented("operation daemonset.GetIpamIPDetectionConfigs has not yet been implemented")
+		})
+	}
 	if api.RuntimeGetRuntimeLivenessHandler == nil {
 		api.RuntimeGetRuntimeLivenessHandler = runtimeops.GetRuntimeLivenessHandlerFunc(func(params runtimeops.GetRuntimeLivenessParams) middleware.Responder {
 			return middleware.NotImplemented("operation runtime.GetRuntimeLiveness has not yet been implemented")

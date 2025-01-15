@@ -149,6 +149,40 @@ func init() {
         }
       }
     },
+    "/ipam/ip-detection-configs": {
+      "get": {
+        "description": "Get ip-detection-configs for ip confilict and gateway detection\n",
+        "tags": [
+          "daemonset"
+        ],
+        "summary": "Get ip-detection-configs for ip confilict and gateway detection",
+        "parameters": [
+          {
+            "name": "get-ip-detection-config",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/GetIPDetectionConfigArgs"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/IPDetectionConfigs"
+            }
+          },
+          "500": {
+            "description": "Config not initialized successfully or others",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            },
+            "x-go-name": "Failure"
+          }
+        }
+      }
+    },
     "/ipam/ips": {
       "post": {
         "description": "Assign multiple ip for a pod, case for spiderflat compent\n",
@@ -291,12 +325,6 @@ func init() {
         "tunePodRoutes"
       ],
       "properties": {
-        "detectGateway": {
-          "type": "boolean"
-        },
-        "detectIPConflict": {
-          "type": "boolean"
-        },
         "hijackCIDR": {
           "type": "array",
           "items": {
@@ -381,6 +409,30 @@ func init() {
         },
         "podNamespace": {
           "type": "string"
+        }
+      }
+    },
+    "GetIPDetectionConfigArgs": {
+      "description": "Get IP Conflict and Gateway detection Args",
+      "type": "object",
+      "properties": {
+        "podName": {
+          "type": "string"
+        },
+        "podNamespace": {
+          "type": "string"
+        }
+      }
+    },
+    "IPDetectionConfigs": {
+      "description": "IPAM IP detection configs",
+      "type": "object",
+      "properties": {
+        "enableGatewayDetection": {
+          "type": "boolean"
+        },
+        "enableIPConflictDetection": {
+          "type": "boolean"
         }
       }
     },
@@ -704,6 +756,40 @@ func init() {
         }
       }
     },
+    "/ipam/ip-detection-configs": {
+      "get": {
+        "description": "Get ip-detection-configs for ip confilict and gateway detection\n",
+        "tags": [
+          "daemonset"
+        ],
+        "summary": "Get ip-detection-configs for ip confilict and gateway detection",
+        "parameters": [
+          {
+            "name": "get-ip-detection-config",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/GetIPDetectionConfigArgs"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/IPDetectionConfigs"
+            }
+          },
+          "500": {
+            "description": "Config not initialized successfully or others",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            },
+            "x-go-name": "Failure"
+          }
+        }
+      }
+    },
     "/ipam/ips": {
       "post": {
         "description": "Assign multiple ip for a pod, case for spiderflat compent\n",
@@ -846,12 +932,6 @@ func init() {
         "tunePodRoutes"
       ],
       "properties": {
-        "detectGateway": {
-          "type": "boolean"
-        },
-        "detectIPConflict": {
-          "type": "boolean"
-        },
         "hijackCIDR": {
           "type": "array",
           "items": {
@@ -936,6 +1016,30 @@ func init() {
         },
         "podNamespace": {
           "type": "string"
+        }
+      }
+    },
+    "GetIPDetectionConfigArgs": {
+      "description": "Get IP Conflict and Gateway detection Args",
+      "type": "object",
+      "properties": {
+        "podName": {
+          "type": "string"
+        },
+        "podNamespace": {
+          "type": "string"
+        }
+      }
+    },
+    "IPDetectionConfigs": {
+      "description": "IPAM IP detection configs",
+      "type": "object",
+      "properties": {
+        "enableGatewayDetection": {
+          "type": "boolean"
+        },
+        "enableIPConflictDetection": {
+          "type": "boolean"
         }
       }
     },

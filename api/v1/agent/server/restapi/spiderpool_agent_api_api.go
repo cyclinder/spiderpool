@@ -61,6 +61,9 @@ func NewSpiderpoolAgentAPIAPI(spec *loads.Document) *SpiderpoolAgentAPIAPI {
 		ConnectivityGetIpamHealthyHandler: connectivity.GetIpamHealthyHandlerFunc(func(params connectivity.GetIpamHealthyParams) middleware.Responder {
 			return middleware.NotImplemented("operation connectivity.GetIpamHealthy has not yet been implemented")
 		}),
+		DaemonsetGetIpamIPDetectionConfigsHandler: daemonset.GetIpamIPDetectionConfigsHandlerFunc(func(params daemonset.GetIpamIPDetectionConfigsParams) middleware.Responder {
+			return middleware.NotImplemented("operation daemonset.GetIpamIPDetectionConfigs has not yet been implemented")
+		}),
 		RuntimeGetRuntimeLivenessHandler: runtimeops.GetRuntimeLivenessHandlerFunc(func(params runtimeops.GetRuntimeLivenessParams) middleware.Responder {
 			return middleware.NotImplemented("operation runtime.GetRuntimeLiveness has not yet been implemented")
 		}),
@@ -123,6 +126,8 @@ type SpiderpoolAgentAPIAPI struct {
 	DaemonsetGetCoordinatorConfigHandler daemonset.GetCoordinatorConfigHandler
 	// ConnectivityGetIpamHealthyHandler sets the operation handler for the get ipam healthy operation
 	ConnectivityGetIpamHealthyHandler connectivity.GetIpamHealthyHandler
+	// DaemonsetGetIpamIPDetectionConfigsHandler sets the operation handler for the get ipam IP detection configs operation
+	DaemonsetGetIpamIPDetectionConfigsHandler daemonset.GetIpamIPDetectionConfigsHandler
 	// RuntimeGetRuntimeLivenessHandler sets the operation handler for the get runtime liveness operation
 	RuntimeGetRuntimeLivenessHandler runtimeops.GetRuntimeLivenessHandler
 	// RuntimeGetRuntimeReadinessHandler sets the operation handler for the get runtime readiness operation
@@ -223,6 +228,9 @@ func (o *SpiderpoolAgentAPIAPI) Validate() error {
 	}
 	if o.ConnectivityGetIpamHealthyHandler == nil {
 		unregistered = append(unregistered, "connectivity.GetIpamHealthyHandler")
+	}
+	if o.DaemonsetGetIpamIPDetectionConfigsHandler == nil {
+		unregistered = append(unregistered, "daemonset.GetIpamIPDetectionConfigsHandler")
 	}
 	if o.RuntimeGetRuntimeLivenessHandler == nil {
 		unregistered = append(unregistered, "runtime.GetRuntimeLivenessHandler")
@@ -346,6 +354,10 @@ func (o *SpiderpoolAgentAPIAPI) initHandlerCache() {
 		o.handlers["GET"] = make(map[string]http.Handler)
 	}
 	o.handlers["GET"]["/ipam/healthy"] = connectivity.NewGetIpamHealthy(o.context, o.ConnectivityGetIpamHealthyHandler)
+	if o.handlers["GET"] == nil {
+		o.handlers["GET"] = make(map[string]http.Handler)
+	}
+	o.handlers["GET"]["/ipam/ip-detection-configs"] = daemonset.NewGetIpamIPDetectionConfigs(o.context, o.DaemonsetGetIpamIPDetectionConfigsHandler)
 	if o.handlers["GET"] == nil {
 		o.handlers["GET"] = make(map[string]http.Handler)
 	}

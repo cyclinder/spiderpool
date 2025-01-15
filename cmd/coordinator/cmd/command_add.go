@@ -4,28 +4,22 @@
 package cmd
 
 import (
-	"context"
-	"errors"
 	"fmt"
-	"net"
 	"time"
 
 	"github.com/containernetworking/cni/pkg/skel"
 	"github.com/containernetworking/cni/pkg/types"
 	current "github.com/containernetworking/cni/pkg/types/100"
 	"github.com/containernetworking/plugins/pkg/ns"
+	"github.com/k8snetworkplumbingwg/sriov-cni/pkg/utils"
 	"github.com/vishvananda/netlink"
-	"go.uber.org/multierr"
 	"go.uber.org/zap"
 
 	"github.com/spidernet-io/spiderpool/api/v1/agent/client/daemonset"
 	"github.com/spidernet-io/spiderpool/api/v1/agent/models"
 	plugincmd "github.com/spidernet-io/spiderpool/cmd/spiderpool/cmd"
 	"github.com/spidernet-io/spiderpool/pkg/constant"
-	"github.com/spidernet-io/spiderpool/pkg/errgroup"
 	"github.com/spidernet-io/spiderpool/pkg/logutils"
-	"github.com/spidernet-io/spiderpool/pkg/networking/gwconnection"
-	"github.com/spidernet-io/spiderpool/pkg/networking/ipchecking"
 	"github.com/spidernet-io/spiderpool/pkg/networking/networking"
 	"github.com/spidernet-io/spiderpool/pkg/networking/sysctl"
 	"github.com/spidernet-io/spiderpool/pkg/openapi"
@@ -118,6 +112,7 @@ func CmdAdd(args *skel.CmdArgs) (err error) {
 	if err != nil {
 		return fmt.Errorf("failed to get current netns: %v", err)
 	}
+	defer c.hostNs.Close()
 	logger.Sugar().Debugf("Get current host netns: %v", c.hostNs.Path())
 
 	// checking if the nic is in up state
@@ -189,44 +184,6 @@ func CmdAdd(args *skel.CmdArgs) (err error) {
 
 	logger.Sugar().Infof("Get coordinator config: %+v", c)
 
-	errgConflict := errgroup.Group{}
-	// IP conflict detection must precede gateway detection, which avoids the
-	// possibility that gateway detection may update arp table entries first and cause
-	// communication problems when IP conflict detection fails
-	// see https://github.com/spidernet-io/spiderpool/issues/4475
-	var ipc *ipchecking.IPChecker
-	if conf.IPConflict != nil && *conf.IPConflict {
-		logger.Debug("Try to detect ip conflict")
-		ipc, err = ipchecking.NewIPChecker(conf.DetectOptions.Retry, conf.DetectOptions.Interval, conf.DetectOptions.TimeOut, c.hostNs, c.netns, logger)
-		if err != nil {
-			return fmt.Errorf("failed to run NewIPChecker: %w", err)
-		}
-		ipc.DoIPConflictChecking(prevResult.IPs, c.currentInterface, &errgConflict)
-	} else {
-		logger.Debug("disable detect ip conflict")
-	}
-
-	if err = errgConflict.Wait(); err != nil {
-		logger.Error("failed to detect ip conflict", zap.Error(err))
-		if errors.Is(err, constant.ErrIPConflict) {
-			logger.Info("ip conflict detected, clean up conflict IPs")
-			_, innerErr := client.Daemonset.DeleteIpamIps(daemonset.NewDeleteIpamIpsParams().WithContext(context.TODO()).WithIpamBatchDelArgs(
-				&models.IpamBatchDelArgs{
-					ContainerID:  &args.ContainerID,
-					NetNamespace: args.Netns,
-					PodName:      (*string)(&k8sArgs.K8S_POD_NAME),
-					PodNamespace: (*string)(&k8sArgs.K8S_POD_NAMESPACE),
-					PodUID:       (*string)(&k8sArgs.K8S_POD_UID),
-				},
-			))
-			if innerErr != nil {
-				logger.Sugar().Errorf("failed to clean up conflict IPs, error: %v", innerErr)
-				return multierr.Append(err, innerErr)
-			}
-		}
-		return err
-	}
-
 	// Fixed Mac addresses must come after IP conflict detection, otherwise the switch learns to communicate
 	// with the wrong Mac address when IP conflict detection fails
 	if len(conf.MacPrefix) != 0 {
@@ -235,65 +192,6 @@ func CmdAdd(args *skel.CmdArgs) (err error) {
 			return fmt.Errorf("failed to update hardware address for interface %s, maybe hardware_prefix(%s) is invalid: %v", args.IfName, conf.MacPrefix, err)
 		}
 		logger.Info("Fix mac address successfully", zap.String("interface", args.IfName), zap.String("macAddress", hwAddr))
-	}
-
-	//  we do detect gateway connection lastly
-	// Finally, there is gateway detection, which updates the correct arp table entries
-	// once there are no IP address conflicts and fixed Mac addresses
-	errgGateway := errgroup.Group{}
-	if conf.DetectGateway != nil && *conf.DetectGateway {
-		logger.Debug("Try to detect gateway")
-
-		var gws []net.IP
-		err = c.netns.Do(func(netNS ns.NetNS) error {
-			gws, err = networking.GetDefaultGatewayByName(c.currentInterface, c.ipFamily)
-			if err != nil {
-				logger.Error("failed to GetDefaultGatewayByName", zap.Error(err))
-				return fmt.Errorf("failed to GetDefaultGatewayByName: %v", err)
-			}
-			logger.Debug("Get GetDefaultGatewayByName", zap.Any("Gws", gws))
-			p, err := gwconnection.New(conf.DetectOptions.Retry, conf.DetectOptions.Interval, conf.DetectOptions.TimeOut, c.currentInterface, logger)
-			if err != nil {
-				return fmt.Errorf("failed to init the gateway client: %v", err)
-			}
-			p.ParseAddrFromPreresult(prevResult.IPs)
-			for _, gw := range gws {
-				if gw.To4() != nil {
-					p.V4Gw = gw
-					errgGateway.Go(c.hostNs, c.netns, p.ArpingOverIface)
-				} else {
-					p.V6Gw = gw
-					errgGateway.Go(c.hostNs, c.netns, p.NDPingOverIface)
-				}
-			}
-			return nil
-		})
-		if err != nil {
-			return err
-		}
-	} else {
-		logger.Debug("disable detect gateway")
-	}
-
-	if err = errgGateway.Wait(); err != nil {
-		logger.Error("failed to detect gateway reachable", zap.Error(err))
-		if errors.Is(err, constant.ErrGatewayUnreachable) {
-			logger.Info("gateway unreachable detected, clean up conflict IPs")
-			_, innerErr := client.Daemonset.DeleteIpamIps(daemonset.NewDeleteIpamIpsParams().WithContext(context.TODO()).WithIpamBatchDelArgs(
-				&models.IpamBatchDelArgs{
-					ContainerID:  &args.ContainerID,
-					NetNamespace: args.Netns,
-					PodName:      (*string)(&k8sArgs.K8S_POD_NAME),
-					PodNamespace: (*string)(&k8sArgs.K8S_POD_NAMESPACE),
-					PodUID:       (*string)(&k8sArgs.K8S_POD_UID),
-				},
-			))
-			if innerErr != nil {
-				logger.Sugar().Errorf("failed to clean up conflict IPs, error: %v", innerErr)
-				return multierr.Append(err, innerErr)
-			}
-		}
-		return err
 	}
 
 	// set txqueuelen

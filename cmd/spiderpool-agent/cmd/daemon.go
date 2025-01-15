@@ -170,6 +170,8 @@ func DaemonMain() {
 		EnableStatefulSet:                    agentContext.Cfg.EnableStatefulSet,
 		EnableKubevirtStaticIP:               agentContext.Cfg.EnableKubevirtStaticIP,
 		EnableReleaseConflictIPsForStateless: agentContext.Cfg.EnableReleaseConflictIPsForStateless,
+		EnableIPConflictDetection:            agentContext.Cfg.EnableIPConflictDetection,
+		EnableGatewayDetection:               agentContext.Cfg.EnableGatewayDetection,
 		OperationRetries:                     agentContext.Cfg.WaitSubnetPoolMaxRetries,
 		OperationGapDuration:                 time.Duration(agentContext.Cfg.WaitSubnetPoolTime) * time.Second,
 		AgentNamespace:                       agentContext.Cfg.AgentPodNamespace,

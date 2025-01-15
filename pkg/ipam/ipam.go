@@ -26,6 +26,7 @@ type IPAM interface {
 	Allocate(ctx context.Context, addArgs *models.IpamAddArgs) (*models.IpamAddResponse, error)
 	Release(ctx context.Context, delArgs *models.IpamDelArgs) error
 	ReleaseIPs(ctx context.Context, delArgs *models.IpamBatchDelArgs) error
+	GetIPGatewayDetectionConfigs(ctx context.Context) *models.IPDetectionConfigs
 	Start(ctx context.Context) error
 }
 
@@ -108,6 +109,13 @@ func (i *ipam) Start(ctx context.Context) error {
 		return nil
 	case err := <-errCh:
 		return err
+	}
+}
+
+func (i *ipam) GetIPGatewayDetectionConfigs(ctx context.Context) *models.IPDetectionConfigs {
+	return &models.IPDetectionConfigs{
+		EnableGatewayDetection:    i.config.EnableGatewayDetection,
+		EnableIPConflictDetection: i.config.EnableIPConflictDetection,
 	}
 }
 

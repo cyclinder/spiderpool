@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"runtime/debug"
@@ -13,20 +14,23 @@ import (
 	"github.com/containernetworking/cni/pkg/skel"
 	"github.com/containernetworking/cni/pkg/types"
 	current "github.com/containernetworking/cni/pkg/types/100"
+	"github.com/containernetworking/plugins/pkg/ns"
 	"github.com/go-openapi/strfmt"
+	"go.uber.org/multierr"
 	"go.uber.org/zap"
 
 	"github.com/spidernet-io/spiderpool/api/v1/agent/client/connectivity"
 	"github.com/spidernet-io/spiderpool/api/v1/agent/client/daemonset"
 	"github.com/spidernet-io/spiderpool/api/v1/agent/models"
+	"github.com/spidernet-io/spiderpool/pkg/constant"
 	spiderpoolip "github.com/spidernet-io/spiderpool/pkg/ip"
 	"github.com/spidernet-io/spiderpool/pkg/openapi"
 )
 
+var logger *zap.Logger
+
 // CmdAdd follows CNI SPEC cmdAdd.
 func CmdAdd(args *skel.CmdArgs) (err error) {
-	var logger *zap.Logger
-
 	// Defer a panic recover, so that in case we panic we can still return
 	// a proper error to the runtime.
 	defer func() {
@@ -39,7 +43,7 @@ func CmdAdd(args *skel.CmdArgs) (err error) {
 				msg = fmt.Sprintf("%s: error=%v", msg, err.Error())
 			}
 
-			if nil != logger {
+			if logger != nil {
 				logger.Sugar().Errorf("%s\n\n%s", msg, debug.Stack())
 			}
 		}
@@ -112,7 +116,7 @@ func CmdAdd(args *skel.CmdArgs) (err error) {
 
 	logger.Debug("Send IPAM request")
 	ipamResponse, err := spiderpoolAgentAPI.Daemonset.PostIpamIP(params)
-	if nil != err {
+	if err != nil {
 		err := fmt.Errorf("%w: %v", ErrPostIPAM, err)
 		logger.Error(err.Error())
 		return err
@@ -122,6 +126,42 @@ func CmdAdd(args *skel.CmdArgs) (err error) {
 	if err = ipamResponse.Payload.Validate(strfmt.Default); nil != err {
 		err := fmt.Errorf("%w: %v", ErrPostIPAM, err)
 		logger.Error(err.Error())
+		return err
+	}
+
+	// do ip confict and gateway detection
+	// get detection config by unix api
+	logger.Debug("Get ipam ip detection configs")
+	detectionConfigs, err := spiderpoolAgentAPI.Daemonset.GetIpamIPDetectionConfigs(daemonset.NewGetIpamIPDetectionConfigsParams())
+	if err != nil {
+		err := fmt.Errorf("failed to get ipam ip detection configs: %v", err)
+		logger.Error(err.Error())
+		return err
+	}
+
+	logger.Sugar().Debugf("ipam ip detection configs: %+v", *detectionConfigs.Payload)
+	netns, err := ns.GetNS(args.Netns)
+	if err != nil {
+		logger.Error(err.Error())
+		return fmt.Errorf("failed to GetNS %q for pod: %v", args.Netns, err)
+	}
+	defer netns.Close()
+
+	hostNs, err := ns.GetCurrentNS()
+	if err != nil {
+		return fmt.Errorf("failed to get current netns: %v", err)
+	}
+	defer hostNs.Close()
+
+	if err = DetectIPGateway(args.IfName, hostNs, netns, ipamResponse.Payload.Ips, *detectionConfigs.Payload); err != nil {
+		if errors.Is(err, constant.ErrIPConflict) || errors.Is(err, constant.ErrGatewayUnreachable) {
+			logger.Info("failed to detect IP conflict or gateway unreachable, clean up IPs")
+			if e := deleteIpamIps(spiderpoolAgentAPI, args, k8sArgs); err != nil {
+				logger.Sugar().Errorf("failed to clean up conflict IPs, error: %v", e)
+				return multierr.Append(err, e)
+			}
+			logger.Info("Successfully cleaned up IPs")
+		}
 		return err
 	}
 

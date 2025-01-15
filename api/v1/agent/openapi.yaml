@@ -110,6 +110,29 @@ paths:
           description: Forbid to release IPs for stateful workload
           schema:
             $ref: "#/definitions/Error"
+  "/ipam/ip-detection-configs":
+    get:
+      summary: Get ip-detection-configs for ip confilict and gateway detection
+      description: |
+        Get ip-detection-configs for ip confilict and gateway detection
+      tags:
+        - daemonset
+      parameters:
+        - name: get-ip-detection-config
+          in: body
+          required: true
+          schema:
+            $ref: "#/definitions/GetIPDetectionConfigArgs"
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: "#/definitions/IPDetectionConfigs"
+        '500':
+          description: Config not initialized successfully or others
+          x-go-name: Failure
+          schema:
+            $ref: "#/definitions/Error"
   "/workloadendpoint":
     get:
       summary: Get workloadendpoint status
@@ -310,6 +333,22 @@ definitions:
       - version
       - address
       - nic
+  IPDetectionConfigs:
+    description: IPAM IP detection configs
+    type: object
+    properties:
+      enableIPConflictDetection:
+        type: boolean
+      enableGatewayDetection:
+        type: boolean
+  GetIPDetectionConfigArgs:
+    description: Get IP Conflict and Gateway detection Args
+    type: object
+    properties:
+      podName:
+        type: string
+      podNamespace:
+        type: string
   CoordinatorConfig:
     description: Coordinator config
     type: object
@@ -340,10 +379,6 @@ definitions:
         type: integer
       txQueueLen:
         type: integer
-      detectIPConflict:
-        type: boolean
-      detectGateway:
-        type: boolean
       vethLinkAddress:
         type: string
     required:

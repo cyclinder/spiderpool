@@ -1,7 +1,7 @@
 // Copyright 2023 Authors of spidernet-io
 // SPDX-License-Identifier: Apache-2.0
 
-package gwconnection
+package detection
 
 import (
 	"fmt"
@@ -11,51 +11,49 @@ import (
 
 	"go.uber.org/zap"
 
-	types100 "github.com/containernetworking/cni/pkg/types/100"
+	"github.com/containernetworking/plugins/pkg/ns"
 	"github.com/mdlayher/arp"
-	_ "github.com/mdlayher/ethernet"
 	"github.com/mdlayher/ndp"
+	"github.com/spidernet-io/spiderpool/api/v1/agent/models"
 	"github.com/spidernet-io/spiderpool/pkg/constant"
+	"github.com/spidernet-io/spiderpool/pkg/errgroup"
 )
 
 type DetectGateway struct {
-	retries                    int
-	iface                      string
-	interval                   time.Duration
-	timeout                    time.Duration
-	v4Addr, v6Addr, V4Gw, V6Gw net.IP
-	logger                     *zap.Logger
+	retries    int
+	iface      string
+	timeout    time.Duration
+	V4Gw, V6Gw netip.Addr
+	logger     *zap.Logger
 }
 
-func New(retries int, interval, timeout, iface string, logger *zap.Logger) (*DetectGateway, error) {
-	var err error
+func RunGatewayDetection(logger *zap.Logger, iface string, hostNetns, podNetns ns.NetNS, ips []*models.IPConfig) error {
 	dg := &DetectGateway{
-		retries: retries,
+		retries: retryNum,
+		timeout: timeOut,
 		iface:   iface,
+		logger:  logger,
 	}
 
-	dg.interval, err = time.ParseDuration(interval)
-	if err != nil {
-		return nil, err
-	}
+	errg := errgroup.Group{}
+	for _, i := range ips {
+		if i.Gateway == "" {
+			continue
+		}
 
-	dg.timeout, err = time.ParseDuration(timeout)
-	if err != nil {
-		return nil, err
-	}
-	dg.logger = logger
+		g := netip.MustParseAddr(i.Gateway)
+		if g.Is4() {
+			dg.V4Gw = g
+			errg.Go(hostNetns, podNetns, dg.ArpingOverIface)
+		}
 
-	return dg, nil
-}
-
-func (dg *DetectGateway) ParseAddrFromPreresult(ipconfigs []*types100.IPConfig) {
-	for _, ipconfig := range ipconfigs {
-		if ipconfig.Address.IP.To4() != nil {
-			dg.v4Addr = ipconfig.Address.IP
-		} else {
-			dg.v6Addr = ipconfig.Address.IP
+		if g.Is6() {
+			dg.V6Gw = g
+			errg.Go(hostNetns, podNetns, dg.NDPingOverIface)
 		}
 	}
+
+	return errg.Wait()
 }
 
 // PingOverIface sends an arp ping over interface 'iface' to 'dstIP'

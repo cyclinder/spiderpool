@@ -703,3 +703,7 @@ OUTER2:
 
 	return finalNodeIpList, nil
 }
+
+func AnnouncePodIPs() error {
+	return nil
+}

@@ -238,21 +238,21 @@ func (n *nriPlugin) CreateContainer(ctx context.Context, sandbox *api.PodSandbox
 	}
 
 	// Convert the allocated RDMA devices to mounts
-	mounts := n.parseRDMACharDevicesToMounts(netStatus)
-	deviceNodes, err := n.parseDeviceNode(netStatus)
+	// mounts := n.parseRDMACharDevicesToMounts(netStatus)
+	deviceNodes, linuxDeviceCgroup, err := n.parseLinuxDeviceNode(netStatus)
 	if err != nil {
 		l.Error("Failed to parse device node", zap.Error(err))
 		return nil, nil, err
 	}
 	l.Info("Successfully get device node and RDMA char devices, Containerd NRI Hook will adjust these devices in CreateContainer",
-		zap.Any("netStatus", netStatus),
-		zap.Any("mounts", mounts),
 		zap.Any("deviceNodes", deviceNodes))
 
 	return &api.ContainerAdjustment{
-		Mounts: mounts,
 		Linux: &api.LinuxContainerAdjustment{
 			Devices: deviceNodes,
+			Resources: &api.LinuxResources{
+				Devices: linuxDeviceCgroup,
+			},
 		},
 	}, nil, nil
 }
@@ -565,23 +565,32 @@ func (n *nriPlugin) parseRDMACharDevicesToMounts(status []*NetworkStatus) []*api
 	return mounts
 }
 
-func (n *nriPlugin) parseDeviceNode(status []*NetworkStatus) ([]*api.LinuxDevice, error) {
+func (n *nriPlugin) parseLinuxDeviceNode(status []*NetworkStatus) ([]*api.LinuxDevice, []*api.LinuxDeviceCgroup, error) {
 	if len(status) == 0 {
-		return []*api.LinuxDevice{}, nil
+		return []*api.LinuxDevice{}, []*api.LinuxDeviceCgroup{}, nil
 	}
 
 	deviceNodes := make([]*api.LinuxDevice, 0, len(status)*3)
+	linuxDeviceCgroup := make([]*api.LinuxDeviceCgroup, 0, len(status)*3)
 	for _, d := range status {
 		for _, c := range d.DeviceInfo.RdmaCharDevices {
 			deviceNode, err := DeviceFromPath(c)
 			if err != nil {
-				return nil, fmt.Errorf("failed to parse devices node for rdma char devices: %v", err)
+				return nil, nil, fmt.Errorf("failed to parse devices node for rdma char devices: %v", err)
 			}
 			deviceNodes = append(deviceNodes, deviceNode)
+
+			linuxDeviceCgroup = append(linuxDeviceCgroup, &api.LinuxDeviceCgroup{
+				Allow:  true,
+				Type:   deviceNode.Type,
+				Major:  &api.OptionalInt64{Value: deviceNode.Major},
+				Minor:  &api.OptionalInt64{Value: deviceNode.Minor},
+				Access: "rw",
+			})
 		}
 	}
 
-	return deviceNodes, nil
+	return deviceNodes, linuxDeviceCgroup, nil
 }
 
 // cacheNetworkStatusToFile saves the network status JSON to a local file
